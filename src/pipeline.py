@@ -8,7 +8,6 @@ def run_pipeline():
     Runs the full ETL pipeline:
     Extract → Transform → Load
     """
-
     input_path = "data/sales_data.csv"
     output_path = "data/output_sales_summary.csv"
 
