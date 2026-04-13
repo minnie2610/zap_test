@@ -1,0 +1,6 @@
+order_id,customer_id,order_date,region,product,amount
+1,101,2025-01-01,West,Shoes,120
+2,102,2025-01-02,East,Tshirt,40
+3,101,2025-01-03,West,Shoes,80
+4,103,2025-01-04,North,Jacket,200
+5,104,2025-01-05,South,Tshirt,60
