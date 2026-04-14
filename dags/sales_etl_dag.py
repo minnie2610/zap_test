@@ -130,3 +130,4 @@ with DAG(
 
     # Task dependencies (workflow)
     extract_task >> transform_task >> aggregate_task >> load_task
+    
