@@ -3,6 +3,8 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 import pandas as pd
 import logging
+from io import StringIO
+import os
 
 
 # ==============================
@@ -18,54 +20,58 @@ default_args = {
 
 
 # ==============================
+# Config
+# ==============================
+DATA_PATH = "/tmp"  # safer path for Airflow
+
+
+# ==============================
 # Task functions
 # ==============================
 def extract_data(**context):
-    """
-    Extract data from source (CSV in this case).
-    """
     logging.info("Extracting data...")
 
-    df = pd.read_csv("data/sales_data.csv")
+    input_file = os.path.join(DATA_PATH, "sales_data.csv")
+    df = pd.read_csv(input_file)
 
-    # Push to XCom
-    context['ti'].xcom_push(key='raw_data', value=df.to_json())
+    temp_path = os.path.join(DATA_PATH, "raw_data.csv")
+    df.to_csv(temp_path, index=False)
+
+    context['ti'].xcom_push(key='raw_path', value=temp_path)
 
     logging.info(f"Extracted {len(df)} records")
 
 
 def transform_data(**context):
-    """
-    Transform and clean the data.
-    """
     logging.info("Transforming data...")
 
     ti = context['ti']
-    raw_json = ti.xcom_pull(key='raw_data')
+    raw_path = ti.xcom_pull(key='raw_path')
 
-    df = pd.read_json(raw_json)
+    df = pd.read_csv(raw_path)
 
     df = df.dropna()
-    df["order_date"] = pd.to_datetime(df["order_date"])
+    df["order_date"] = pd.to_datetime(df["order_date"], errors="coerce")
+    df = df.dropna(subset=["order_date"])
     df["amount"] = df["amount"].astype(float)
 
-    df["month"] = df["order_date"].dt.to_period("M")
+    df["month"] = df["order_date"].dt.to_period("M").astype(str)
 
-    ti.xcom_push(key='clean_data', value=df.to_json())
+    temp_path = os.path.join(DATA_PATH, "clean_data.csv")
+    df.to_csv(temp_path, index=False)
+
+    ti.xcom_push(key='clean_path', value=temp_path)
 
     logging.info("Transformation complete")
 
 
 def aggregate_data(**context):
-    """
-    Aggregate KPIs from cleaned data.
-    """
     logging.info("Aggregating data...")
 
     ti = context['ti']
-    clean_json = ti.xcom_pull(key='clean_data')
+    clean_path = ti.xcom_pull(key='clean_path')
 
-    df = pd.read_json(clean_json)
+    df = pd.read_csv(clean_path)
 
     agg_df = df.groupby("month").agg(
         total_revenue=("amount", "sum"),
@@ -73,23 +79,27 @@ def aggregate_data(**context):
         unique_customers=("customer_id", "nunique")
     ).reset_index()
 
-    ti.xcom_push(key='agg_data', value=agg_df.to_json())
+    temp_path = os.path.join(DATA_PATH, "agg_data.csv")
+    agg_df.to_csv(temp_path, index=False)
+
+    ti.xcom_push(key='agg_path', value=temp_path)
 
     logging.info("Aggregation complete")
 
 
 def load_data(**context):
-    """
-    Load aggregated data to output.
-    """
     logging.info("Loading data...")
 
     ti = context['ti']
-    agg_json = ti.xcom_pull(key='agg_data')
+    agg_path = ti.xcom_pull(key='agg_path')
 
-    df = pd.read_json(agg_json)
+    df = pd.read_csv(agg_path)
 
-    output_path = f"data/output_{datetime.now().strftime('%Y%m%d')}.csv"
+    output_path = os.path.join(
+        DATA_PATH,
+        f"output_{datetime.now().strftime('%Y%m%d')}.csv"
+    )
+
     df.to_csv(output_path, index=False)
 
     logging.info(f"Data saved to {output_path}")
@@ -128,6 +138,4 @@ with DAG(
         python_callable=load_data,
     )
 
-    # Task dependencies (workflow)
     extract_task >> transform_task >> aggregate_task >> load_task
-    
