@@ -13,9 +13,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
-          fetch-depth: 0          # 🔧 BUG FIX 1: Get full git history so diff works
+          fetch-depth: 0
 
       - name: Collect, mask, and send code to Zapier
+        env:
+          ZAPIER_WEBHOOK_URL: ${{ secrets.ZAPIER_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 << 'PYTHON_SCRIPT'
           import subprocess
@@ -35,7 +38,7 @@ jobs:
           
           print(f"Found {len(files)} Python files: {files}")
 
-          # 🔧 MASKING FUNCTION: Remove sensitive data before sending
+          # MASKING FUNCTION: Remove sensitive data before sending
           def mask_code(source):
               """Mask sensitive information in code"""
               
@@ -65,10 +68,10 @@ jobs:
           code_content = ""
           for file in files:
               try:
-                  full_path = os.path.join(repo_root, file)  # 🔧 BUG FIX 2: Use full path
+                  full_path = os.path.join(repo_root, file)
                   with open(full_path, 'r') as f:
                       raw = f.read()
-                  masked = mask_code(raw)  # 🔧 Apply masking here
+                  masked = mask_code(raw)
                   code_content += f"# === FILE: {file} ===\n{masked}\n\n"
               except Exception as e:
                   print(f"Could not read {file}: {e}")
@@ -80,7 +83,8 @@ jobs:
               "pr_branch_name": "${{ github.event.pull_request.head.ref }}",
               "pr_url": "${{ github.event.pull_request.html_url }}",
               "pr_number": "${{ github.event.pull_request.number }}",
-              "repo_name": "${{ github.event.repository.name }}"
+              "repo_name": "${{ github.event.repository.name }}",
+              "repo_owner": "${{ github.repository_owner }}"
           }
 
           # Send to Zapier webhook
@@ -89,10 +93,8 @@ jobs:
               response = requests.post(webhook_url, json=payload)
               print(f"✅ Sent to Zapier: {response.status_code}")
               print(f"📊 Code lines: {len(code_content.splitlines())}")
-              print(f"📝 Masked code preview: {code_content[:200]}...")
+              print(f"📝 Found {len(files)} files")
           else:
               print("❌ ERROR: ZAPIER_WEBHOOK_URL not set")
               exit(1)
           PYTHON_SCRIPT
-        env:
-          ZAPIER_WEBHOOK_URL: ${{ secrets.ZAPIER_WEBHOOK_URL }}
