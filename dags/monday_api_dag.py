@@ -137,4 +137,3 @@ with DAG(
         python_callable=fetch_monday_data
     )
     data_pull
-    
