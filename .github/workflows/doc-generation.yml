@@ -32,42 +32,26 @@ jobs:
 
           repo_root = os.environ.get('GITHUB_WORKSPACE', '.')
 
-          # Get changed .py files (compare to main branch)
+          # Get changed .py files
           result = subprocess.run(
               ['git', 'diff', '--name-only', f"origin/{os.environ.get('GITHUB_BASE_REF', 'main')}...HEAD"],
               capture_output=True, text=True
           )
           files = [f for f in result.stdout.strip().split('\n') if f.endswith('.py') and f]
           
-          print(f"Found {len(files)} Python files: {files}")
+          print(f"✅ Found {len(files)} Python files")
 
-          # MASKING FUNCTION: Remove sensitive data before sending
           def mask_code(source):
-              """Mask sensitive information in code"""
-              
-              # 1. Mask string literals (keep structure, hide content)
               source = re.sub(r'"""[\s\S]*?"""', '"""[MASKED_STRING]"""', source)
               source = re.sub(r"'''[\s\S]*?'''", "'''[MASKED_STRING]'''", source)
               source = re.sub(r'"(?:[^"\\]|\\.)*"', '"[MASKED_STRING]"', source)
               source = re.sub(r"'(?:[^'\\]|\\.)*'", "'[MASKED_STRING]'", source)
-
-              # 2. Mask hardcoded IPs and URLs
               source = re.sub(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', '[IP_MASKED]', source)
               source = re.sub(r'https?://[^\s\'"]+', '[URL_MASKED]', source)
-
-              # 3. Mask secrets/keys/tokens/passwords
-              source = re.sub(
-                  r'(?i)(password|secret|token|api_?key|auth|credential)\s*=\s*\S+',
-                  r'\1 = [SECRET_MASKED]',
-                  source
-              )
-
-              # 4. Mask email addresses
+              source = re.sub(r'(?i)(password|secret|token|api_?key|auth|credential)\s*=\s*\S+', r'\1 = [SECRET_MASKED]', source)
               source = re.sub(r'[\w.+-]+@[\w-]+\.[a-zA-Z]+', '[EMAIL_MASKED]', source)
-
               return source
 
-          # Read all files and mask them
           code_content = ""
           for file in files:
               try:
@@ -77,9 +61,9 @@ jobs:
                   masked = mask_code(raw)
                   code_content += f"# === FILE: {file} ===\n{masked}\n\n"
               except Exception as e:
-                  print(f"Could not read {file}: {e}")
+                  print(f"⚠️ Could not read {file}: {e}")
 
-          # Create JSON payload
+          # THIS IS THE KEY PART - Send github_token!
           payload = {
               "masked_code": code_content,
               "author_email": "${{ github.event.pull_request.user.login }}@github.com",
@@ -91,13 +75,11 @@ jobs:
               "github_token": "${{ secrets.GITHUB_TOKEN }}"
           }
 
-          # Send to Zapier webhook
           webhook_url = os.environ.get('ZAPIER_WEBHOOK_URL')
           if webhook_url:
               response = requests.post(webhook_url, json=payload)
               print(f"✅ Sent to Zapier: {response.status_code}")
               print(f"📊 Code lines: {len(code_content.splitlines())}")
-              print(f"📝 Found {len(files)} files")
           else:
               print("❌ ERROR: ZAPIER_WEBHOOK_URL not set")
               exit(1)
